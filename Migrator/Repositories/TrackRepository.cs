@@ -73,7 +73,7 @@ namespace Migrator.Repositories
 
         public override int GetHashCode()
         {
-            return Id?.GetHashCode() ?? (new Random()).Next();
+            return Id?.GetHashCode() ?? 0;
         }
     }
 }

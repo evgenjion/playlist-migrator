@@ -41,7 +41,9 @@ namespace Migrator.Services
             ).ToHashSet();
 
             var currentUserTracks = await GetCurrentUserTracks(bearer);
-            var playlistsToMerge = allPlaylists;
+            var playlistsToMerge = allPlaylists
+                .Where(p => p.Id != destinationPlaylist.Id)
+                .ToList();
 
             foreach (PlaylistDTO sourcePlaylist in playlistsToMerge)
             {
@@ -67,18 +69,24 @@ namespace Migrator.Services
         )
         {
             List<TrackDTO> tracksToAdd = [];
+            var scheduledTracks = new HashSet<TrackDTO>();
 
             foreach (var track in tracksInSourcePlaylist)
             {
-                if (tracksInTargetPlaylist.Contains(track))
+                if (tracksInTargetPlaylist.Contains(track) || scheduledTracks.Contains(track))
                 {
                     continue;
                 }
 
                 tracksToAdd.Add(track);
+                scheduledTracks.Add(track);
             }
 
-            await UploadTracksIntoTargetPlaylist(tracksToAdd, targetPlaylist);
+            var successfullyUploadedTracks = await UploadTracksIntoTargetPlaylistAsync(tracksToAdd, targetPlaylist);
+            foreach (var track in successfullyUploadedTracks)
+            {
+                tracksInTargetPlaylist.Add(track);
+            }
         }
 
         private async Task<List<TrackDTO>> GetCurrentUserTracks(string bearer)
@@ -104,32 +112,49 @@ namespace Migrator.Services
             List<TrackDTO> tracksFromPlaylist = await GetAllTracksForPlaylist(bearer, playlistFrom);
 
             List<TrackDTO> tracksToAdd = [];
+            var scheduledTracks = new HashSet<TrackDTO>();
             foreach (var track in tracksFromPlaylist)
             {
-                if (!tracksInTargetPlaylist.Contains(track))
+                if (!tracksInTargetPlaylist.Contains(track) && !scheduledTracks.Contains(track))
                 {
                     tracksToAdd.Add(track);
+                    scheduledTracks.Add(track);
                     Console.WriteLine(
                         $"=============Scheduling addition of track {track.Id} into target playlist============="
                     );
                 }
             }
 
-            await UploadTracksIntoTargetPlaylist(tracksToAdd, playlistTo);
+            var successfullyUploadedTracks = await UploadTracksIntoTargetPlaylistAsync(tracksToAdd, playlistTo);
+            foreach (var track in successfullyUploadedTracks)
+            {
+                tracksInTargetPlaylist.Add(track);
+            }
         }
 
-        private async Task UploadTracksIntoTargetPlaylist(
+        private async Task<List<TrackDTO>> UploadTracksIntoTargetPlaylistAsync(
             List<TrackDTO> tracksToAdd,
             PlaylistDTO targetPlaylist
         )
         {
+            var successfullyUploaded = new List<TrackDTO>();
             var tracksToAddRespectingLimit = tracksToAdd.Chunk(_config.SpotifyAddTracksLimit);
 
             foreach (var tracksChunk in tracksToAddRespectingLimit)
             {
-                await Task.Delay(_config.SpotifyDelayBetweenRequestsInMs);
-                await _playlistsRepository.AddTracks(targetPlaylist, tracksChunk.ToList());
+                try
+                {
+                    await Task.Delay(_config.SpotifyDelayBetweenRequestsInMs);
+                    await _playlistsRepository.AddTracks(targetPlaylist, tracksChunk.ToList());
+                    successfullyUploaded.AddRange(tracksChunk);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to upload chunk of {tracksChunk.Length} tracks: {ex.Message}");
+                }
             }
+
+            return successfullyUploaded;
         }
 
         private async Task<PlaylistDTO> GetOrCreateTargetPlaylist(

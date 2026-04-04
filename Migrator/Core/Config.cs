@@ -31,7 +31,7 @@ namespace Migrator.Core
 
         public string SpotifyRedirectUri => "https://127.0.0.1/api/v1/oauth/callback";
         // public string MergedPlaylistName => "[Merged playlists]";
-        public string MergedPlaylistName => "[All in one]";
+        public string MergedPlaylistName => "[All in One v2]";
         public string MergedPlaylistDescription => "Playlist created by the playlist mergify tool";
         public int SpotifyBaseRequestLimit = 100;
         public int SpotifyGetMyTracksLimit = 50;
